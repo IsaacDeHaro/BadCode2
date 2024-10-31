@@ -1,0 +1,282 @@
+Aquí tienes el problema inicial de gestión de pedidos en una tienda de productos electrónicos, adaptado en Python.
+
+### Problema de Código Inicial en Python (badcode)
+
+Este código incluye múltiples problemas, como el uso de condicionales para productos y descuentos específicos, así como el manejo de varios estados de forma acoplada. Esto será la base para aplicar refactorización y patrones de diseño.
+
+```python
+class Order:
+    def __init__(self, order_id, customer_name, products):
+        self.order_id = order_id
+        self.customer_name = customer_name
+        self.products = products
+        self.status = "New"
+        self.total_price = 0
+        self.calculate_total_price()
+
+    def calculate_total_price(self):
+        self.total_price = 0
+        for product in self.products:
+            if product == "Laptop":
+                self.total_price += 1000
+            elif product == "Phone":
+                self.total_price += 500
+            elif product == "Tablet":
+                self.total_price += 300
+
+    def apply_discount(self):
+        if self.customer_name == "John Doe":
+            self.total_price *= 0.9  # 10% de descuento para "John Doe"
+
+    def print_invoice(self):
+        print(f"Order ID: {self.order_id}")
+        print(f"Customer: {self.customer_name}")
+        print(f"Status: {self.status}")
+        print("Products:")
+        for product in self.products:
+            print(f"- {product}")
+        print(f"Total Price: {self.total_price}")
+
+    def process_order(self):
+        if self.status == "New":
+            print("Processing order...")
+            self.status = "Processed"
+            print("Order processed.")
+        elif self.status == "Processed":
+            print("Order already processed.")
+        elif self.status == "Cancelled":
+            print("Cannot process a cancelled order.")
+
+    def cancel_order(self):
+        if self.status == "New" or self.status == "Processed":
+            print("Cancelling order...")
+            self.status = "Cancelled"
+            print("Order cancelled.")
+        else:
+            print("Order is already cancelled.")
+
+
+# Ejemplo de uso
+products = ["Laptop", "Phone", "Tablet"]
+order = Order(1, "John Doe", products)
+order.print_invoice()
+order.apply_discount()
+order.print_invoice()
+order.process_order()
+order.cancel_order()
+```
+
+### Problemas Presentes en el Código:
+
+1. **Condicionales para determinar el precio de productos**:
+   - `calculate_total_price` usa condicionales (`if`, `elif`) para determinar el precio según el nombre del producto. Esto hace que sea difícil añadir nuevos productos o cambiar precios sin modificar el método.
+
+2. **Descuento fijo basado en el nombre del cliente**:
+   - `apply_discount` aplica un descuento solo a un cliente específico ("John Doe"), lo cual está hardcoded. Esto limita la flexibilidad y reutilización.
+
+3. **Gestión de estados como cadenas**:
+   - Los estados se representan con cadenas de texto (`"New"`, `"Processed"`, `"Cancelled"`), lo cual es frágil y propenso a errores.
+
+4. **Acoplamiento entre `Order` y el formato de salida**:
+   - `print_invoice` imprime directamente en consola, lo cual hace que la clase `Order` esté acoplada a un formato de salida específico.
+
+# SOLUCION
+
+```python
+from abc import ABC, abstractmethod
+import json
+
+# Clases de Productos
+class Product(ABC):
+    @property
+    @abstractmethod
+    def name(self):
+        pass
+    
+    @abstractmethod
+    def get_price(self):
+        pass
+
+class Laptop(Product):
+    @property
+    def name(self):
+        return "Laptop"
+    
+    def get_price(self):
+        return 1000
+
+class Phone(Product):
+    @property
+    def name(self):
+        return "Phone"
+    
+    def get_price(self):
+        return 500
+
+class Tablet(Product):
+    @property
+    def name(self):
+        return "Tablet"
+    
+    def get_price(self):
+        return 300
+
+
+# Estrategias de Descuento (Strategy)
+class DiscountStrategy(ABC):
+    @abstractmethod
+    def apply_discount(self, total_price):
+        pass
+
+class NoDiscount(DiscountStrategy):
+    def apply_discount(self, total_price):
+        return total_price
+
+class LoyalCustomerDiscount(DiscountStrategy):
+    def apply_discount(self, total_price):
+        return total_price * 0.9  # 10% de descuento
+
+class SeasonalDiscount(DiscountStrategy):
+    def apply_discount(self, total_price):
+        return total_price * 0.85  # 15% de descuento
+
+
+# Cálculo de Precio
+class PriceCalculator:
+    def calculate_total_price(self, products):
+        return sum(product.get_price() for product in products)
+
+
+# Estados del Pedido (State)
+class OrderState(ABC):
+    @abstractmethod
+    def process_order(self, order):
+        pass
+    
+    @abstractmethod
+    def cancel_order(self, order):
+        pass
+
+class NewState(OrderState):
+    def process_order(self, order):
+        print("Processing order...")
+        order.set_state(ProcessedState())
+    
+    def cancel_order(self, order):
+        print("Cancelling order...")
+        order.set_state(CancelledState())
+
+class ProcessedState(OrderState):
+    def process_order(self, order):
+        print("Order is already processed.")
+    
+    def cancel_order(self, order):
+        print("Cannot cancel a processed order.")
+
+class CancelledState(OrderState):
+    def process_order(self, order):
+        print("Cannot process a cancelled order.")
+    
+    def cancel_order(self, order):
+        print("Order is already cancelled.")
+
+
+# Formateadores de Factura (Adapter)
+class InvoiceFormatter(ABC):
+    @abstractmethod
+    def format_invoice(self, order):
+        pass
+
+class ConsoleInvoiceFormatter(InvoiceFormatter):
+    def format_invoice(self, order):
+        invoice = f"Order ID: {order.order_id}\n"
+        invoice += f"Customer: {order.customer_name}\n"
+        invoice += "Products:\n"
+        for product in order.products:
+            invoice += f"- {product.name}: ${product.get_price()}\n"
+        invoice += f"Total Price: ${order.get_total_price()}\n"
+        print(invoice)
+        return invoice
+
+class HtmlInvoiceFormatter(InvoiceFormatter):
+    def format_invoice(self, order):
+        html = f"<h1>Order ID: {order.order_id}</h1>"
+        html += f"<p>Customer: {order.customer_name}</p>"
+        html += "<ul>"
+        for product in order.products:
+            html += f"<li>{product.name}: ${product.get_price()}</li>"
+        html += "</ul>"
+        html += f"<p>Total Price: ${order.get_total_price()}</p>"
+        return html
+
+class JsonInvoiceFormatter(InvoiceFormatter):
+    def format_invoice(self, order):
+        invoice = {
+            "OrderId": order.order_id,
+            "Customer": order.customer_name,
+            "Products": [{"name": product.name, "price": product.get_price()} for product in order.products],
+            "TotalPrice": order.get_total_price()
+        }
+        return json.dumps(invoice, indent=4)
+
+
+# Clase Principal de Pedido
+class Order:
+    def __init__(self, order_id, customer_name, products, price_calculator, discount_manager, invoice_formatter):
+        self.order_id = order_id
+        self.customer_name = customer_name
+        self.products = products
+        self.price_calculator = price_calculator
+        self.discount_manager = discount_manager
+        self.invoice_formatter = invoice_formatter
+        self.state = NewState()
+
+    def get_total_price(self):
+        total_price = self.price_calculator.calculate_total_price(self.products)
+        return self.discount_manager.apply_discount(total_price)
+
+    def process_order(self):
+        self.state.process_order(self)
+
+    def cancel_order(self):
+        self.state.cancel_order(self)
+
+    def print_invoice(self):
+        self.invoice_formatter.format_invoice(self)
+
+    def set_state(self, state):
+        self.state = state
+
+
+# Ejemplo de Uso
+if __name__ == "__main__":
+    # Crear productos
+    products = [Laptop(), Phone()]
+
+    # Definir estrategia de descuento y formateador de factura
+    discount_strategy = LoyalCustomerDiscount()
+    formatter = HtmlInvoiceFormatter()
+
+    # Crear instancias de auxiliares
+    price_calculator = PriceCalculator()
+    discount_manager = DiscountManager(discount_strategy)
+
+    # Crear pedido
+    order = Order(order_id=1, customer_name="Alice", products=products, 
+                  price_calculator=price_calculator, discount_manager=discount_manager, 
+                  invoice_formatter=formatter)
+
+    # Procesar pedido y mostrar factura
+    order.process_order()
+    order.print_invoice()
+```
+
+### Descripción General
+
+Este código aplica los patrones de diseño necesarios para mejorar la flexibilidad, mantenibilidad y modularidad de la aplicación de gestión de pedidos en una tienda en línea. Aquí se han implementado:
+
+1. **Patrón Strategy** para diferentes estrategias de descuento (`NoDiscount`, `LoyalCustomerDiscount`, `SeasonalDiscount`).
+2. **Patrón State** para gestionar los estados del pedido (`NewState`, `ProcessedState`, `CancelledState`).
+3. **Patrón Adapter** para generar facturas en múltiples formatos (`ConsoleInvoiceFormatter`, `HtmlInvoiceFormatter`, `JsonInvoiceFormatter`).
+
+La estructura modular y la delegación de responsabilidades hacen que este diseño sea fácil de expandir con nuevos productos, descuentos, estados y formatos de factura.
