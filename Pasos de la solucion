@@ -1,0 +1,1219 @@
+### Cuestionamiento 1: ¿Cómo mejorarías la flexibilidad del cálculo de precios?
+
+Actualmente, el método `CalculateTotalPrice` de la clase `Order` utiliza condicionales para determinar el precio de cada producto. Esta implementación tiene varias limitaciones:
+
+- **Rigidez**: Cada vez que se agregue un nuevo producto o se cambie un precio, necesitamos modificar el código directamente.
+- **Complejidad acumulada**: Si hay muchos productos, el método crecerá en complejidad, haciéndolo difícil de mantener.
+- **Violación del Principio de Responsabilidad Única (SRP)**: La clase `Order` maneja tanto los pedidos como la lógica de precios, cuando en realidad son dos responsabilidades distintas.
+
+Para mejorar la flexibilidad, podemos implementar el patrón **Strategy**, que permite definir una familia de algoritmos (en este caso, estrategias de cálculo de precios) y hacer que la clase `Order` use una de estas estrategias en lugar de tener la lógica de cálculo directamente en su interior.
+
+### Pasos para aplicar el patrón Strategy:
+
+1. **Definir una interfaz para la estrategia de cálculo de precios**:
+   - Creamos una interfaz `IPricingStrategy` que tendrá un método `CalculatePrice`, permitiendo que cada estrategia implemente su propio cálculo de precio para los productos.
+
+2. **Crear implementaciones específicas de la estrategia**:
+   - Implementaremos clases concretas de `IPricingStrategy`, una por cada tipo de producto (por ejemplo, `LaptopPricing`, `PhonePricing`, etc.).
+
+3. **Asignar una estrategia de precio a cada producto**:
+   - `Order` podrá usar la interfaz `IPricingStrategy` para calcular el precio, sin tener que conocer los detalles de cada tipo de producto.
+
+```csharp
+public interface IPricingStrategy
+{
+    double CalculatePrice();
+}
+
+public class LaptopPricing : IPricingStrategy
+{
+    public double CalculatePrice() => 1000;
+}
+
+public class PhonePricing : IPricingStrategy
+{
+    public double CalculatePrice() => 500;
+}
+
+public class TabletPricing : IPricingStrategy
+{
+    public double CalculatePrice() => 300;
+}
+```
+
+### Integración de las Estrategias en `Order`
+
+Ahora, cada producto en `Order` puede tener su propia instancia de `IPricingStrategy`, y `Order` solo necesitará llamar a `CalculatePrice` para obtener el precio sin depender de condicionales específicos.
+
+### Cuestionamiento 2: ¿Cómo podríamos manejar los estados del pedido de manera más robusta?
+
+Actualmente, el estado del pedido (`Status`) está representado como una cadena de texto (`"New"`, `"Processed"`, `"Cancelled"`), lo cual trae varios problemas:
+
+- **Fragilidad en la validación**: Cualquier error tipográfico en el uso de estas cadenas causará errores o comportamientos inesperados.
+- **Condicionales dispersos**: Existen condicionales en los métodos `ProcessOrder` y `CancelOrder` para manejar la lógica de cambio de estado, lo que dificulta el mantenimiento y la extensión.
+- **Falta de encapsulación**: La clase `Order` debería delegar la lógica de cambio de estado a un mecanismo más apropiado.
+
+Para solucionar esto, podemos aplicar el patrón **State**, el cual permite encapsular el comportamiento específico de cada estado en su propia clase. Esto simplifica la clase `Order` y mejora la seguridad en el manejo de estados.
+
+### Pasos para implementar el patrón State:
+
+1. **Crear una interfaz para los estados del pedido**:
+   - Definimos una interfaz `IOrderState` con métodos que representan las posibles acciones (`ProcessOrder` y `CancelOrder`).
+
+2. **Implementar una clase concreta para cada estado**:
+   - Creamos clases para cada estado del pedido (`NewState`, `ProcessedState`, `CancelledState`). Cada clase implementa `IOrderState` y define la lógica de sus métodos según su estado específico.
+
+3. **Asignar el estado en la clase `Order`**:
+   - `Order` tendrá una referencia a un objeto de tipo `IOrderState`, y delegará las acciones de procesamiento y cancelación al estado actual.
+
+### Estructura de Código Inicial
+
+```csharp
+public interface IOrderState
+{
+    void ProcessOrder(Order order);
+    void CancelOrder(Order order);
+}
+
+public class NewState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("Processing order...");
+        order.SetState(new ProcessedState());
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("Cancelling order...");
+        order.SetState(new CancelledState());
+    }
+}
+
+public class ProcessedState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("Order is already processed.");
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("Cannot cancel a processed order.");
+    }
+}
+
+public class CancelledState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("Cannot process a cancelled order.");
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("Order is already cancelled.");
+    }
+}
+```
+
+### Ajustes en la Clase `Order`
+
+La clase `Order` puede ahora delegar la lógica de estado a su objeto `IOrderState`, lo que elimina la necesidad de condicionales y reduce el acoplamiento. Aquí un ejemplo de cómo integrarlo:
+
+```csharp
+public class Order
+{
+    private IOrderState _state;
+    public int OrderId { get; private set; }
+    public string CustomerName { get; private set; }
+
+    public Order(int orderId, string customerName)
+    {
+        OrderId = orderId;
+        CustomerName = customerName;
+        _state = new NewState(); // Estado inicial
+    }
+
+    public void SetState(IOrderState state)
+    {
+        _state = state;
+    }
+
+    public void ProcessOrder()
+    {
+        _state.ProcessOrder(this);
+    }
+
+    public void CancelOrder()
+    {
+        _state.CancelOrder(this);
+    }
+}
+```
+
+### Ventajas de esta Implementación:
+
+- **Desacoplamiento**: Cada clase de estado maneja su propia lógica, manteniendo el código de `Order` simple y fácil de mantener.
+- **Flexibilidad**: Podemos agregar nuevos estados sin modificar la clase `Order`.
+- **Seguridad**: Al eliminar el uso de cadenas, reducimos errores y mejoramos la claridad.
+
+### Cuestionamiento 3: ¿De qué manera podríamos eliminar el acoplamiento fuerte del método `ApplyDiscount`?
+
+Actualmente, el método `ApplyDiscount` en la clase `Order` aplica un descuento directamente en base al nombre del cliente (`CustomerName`). Esto presenta varios problemas:
+
+- **Dependencia en un valor específico**: `ApplyDiscount` solo se aplica a un cliente específico, lo que limita la funcionalidad.
+- **Falta de flexibilidad**: Si queremos agregar nuevos tipos de descuentos, tendríamos que modificar el método, violando el Principio Abierto/Cerrado (Open/Closed Principle).
+- **Código rígido**: No es sencillo cambiar el tipo o la cantidad del descuento sin modificar directamente el código.
+
+Para mejorar esto, podemos usar el patrón **Strategy**, permitiendo definir diferentes estrategias de descuento que puedan aplicarse en tiempo de ejecución según el cliente o el contexto del pedido.
+
+### Pasos para implementar el patrón Strategy en el cálculo de descuentos:
+
+1. **Crear una interfaz para la estrategia de descuento**:
+   - Definimos una interfaz `IDiscountStrategy` con un método `ApplyDiscount` que acepta el total de la orden y retorna el precio después de aplicar el descuento.
+
+2. **Crear clases concretas para cada tipo de descuento**:
+   - Cada estrategia de descuento se convierte en una clase que implementa `IDiscountStrategy`. Por ejemplo, podemos crear `RegularCustomerDiscount`, `SeasonalDiscount`, y `SpecialEventDiscount`.
+
+3. **Asignar una estrategia de descuento a la orden**:
+   - En la clase `Order`, agregamos una propiedad para el tipo de descuento y aplicamos la estrategia adecuada cuando sea necesario.
+
+### Ejemplo de Implementación del Patrón Strategy para Descuentos
+
+1. **Interfaz `IDiscountStrategy`**:
+
+   ```csharp
+   public interface IDiscountStrategy
+   {
+       double ApplyDiscount(double totalPrice);
+   }
+   ```
+
+2. **Implementaciones de Estrategias de Descuento**:
+
+   ```csharp
+   public class NoDiscount : IDiscountStrategy
+   {
+       public double ApplyDiscount(double totalPrice) => totalPrice;
+   }
+
+   public class RegularCustomerDiscount : IDiscountStrategy
+   {
+       public double ApplyDiscount(double totalPrice) => totalPrice * 0.9; // 10% de descuento
+   }
+
+   public class SeasonalDiscount : IDiscountStrategy
+   {
+       public double ApplyDiscount(double totalPrice) => totalPrice * 0.85; // 15% de descuento
+   }
+
+   public class SpecialEventDiscount : IDiscountStrategy
+   {
+       public double ApplyDiscount(double totalPrice) => totalPrice * 0.8; // 20% de descuento
+   }
+   ```
+
+3. **Ajustes en la Clase `Order`**:
+   - La clase `Order` ahora recibirá una instancia de `IDiscountStrategy` como parte de su configuración o durante el proceso de creación del pedido, permitiendo cambiar la estrategia de descuento sin modificar el método `ApplyDiscount` internamente.
+
+   ```csharp
+   public class Order
+   {
+       private readonly IDiscountStrategy _discountStrategy;
+       public double TotalPrice { get; private set; }
+       public List<string> Products { get; private set; }
+
+       public Order(List<string> products, IDiscountStrategy discountStrategy)
+       {
+           Products = products;
+           _discountStrategy = discountStrategy;
+           CalculateTotalPrice();
+       }
+
+       private void CalculateTotalPrice()
+       {
+           TotalPrice = 0;
+           foreach (var product in Products)
+           {
+               // Ejemplo de cálculo de precio
+               TotalPrice += product == "Laptop" ? 1000 : 500; // Simplificado
+           }
+       }
+
+       public void ApplyDiscount()
+       {
+           TotalPrice = _discountStrategy.ApplyDiscount(TotalPrice);
+       }
+   }
+   ```
+
+4. **Uso de las Estrategias de Descuento**:
+   - En el momento de crear el pedido, se elige la estrategia de descuento adecuada y se pasa al constructor de `Order`.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var products = new List<string> { "Laptop", "Phone" };
+           IDiscountStrategy discountStrategy = new RegularCustomerDiscount();
+           var order = new Order(products, discountStrategy);
+
+           order.ApplyDiscount();
+           Console.WriteLine($"Total con descuento: {order.TotalPrice}");
+       }
+   }
+   ```
+
+### Beneficios de esta Implementación:
+
+- **Flexibilidad**: Podemos agregar o cambiar estrategias de descuento sin modificar la clase `Order`.
+- **Desacoplamiento**: La lógica de descuento se encuentra en sus propias clases, eliminando la dependencia directa de `Order` con el tipo de cliente.
+- **Extensibilidad**: Es fácil agregar nuevas estrategias de descuento en el futuro (por ejemplo, descuentos promocionales) sin cambiar la lógica interna de `Order`.
+
+### Cuestionamiento 4: ¿Cómo se podría mejorar la extensión de los productos sin modificar el código de `Order`?
+
+Actualmente, el método `CalculateTotalPrice` en la clase `Order` usa nombres específicos de productos (por ejemplo, `"Laptop"`, `"Phone"`, `"Tablet"`) para calcular el precio, lo cual hace que la clase `Order` dependa directamente de estos valores. Esto trae varios problemas:
+
+- **Difícil de mantener y extender**: Cada vez que se agrega un nuevo producto o se cambia el precio, es necesario modificar `Order`, lo que viola el Principio Abierto/Cerrado (Open/Closed Principle).
+- **Código rígido**: El código se vuelve inflexible al depender de nombres de productos hardcoded.
+- **Falta de cohesión**: `Order` tiene responsabilidad sobre el cálculo de precios, lo cual debería delegarse a las clases de producto o una fábrica de productos.
+
+Para mejorar esto, podemos usar el patrón **Factory Method** o **Abstract Factory** para crear instancias de productos específicos que se encarguen de sus propios precios y atributos.
+
+### Pasos para implementar el patrón Factory Method para productos:
+
+1. **Definir una interfaz para el producto**:
+   - Creamos una interfaz `IProduct` con propiedades y métodos necesarios, como `GetPrice()`.
+
+2. **Crear clases específicas para cada tipo de producto**:
+   - Implementamos una clase concreta para cada producto (por ejemplo, `Laptop`, `Phone`, `Tablet`) que heredan de `IProduct` y definen sus precios.
+
+3. **Crear una fábrica de productos**:
+   - Creamos una clase `ProductFactory` que se encargará de crear instancias de `IProduct` basándose en el tipo de producto solicitado.
+
+### Ejemplo de implementación
+
+1. **Interfaz `IProduct`**:
+
+   ```csharp
+   public interface IProduct
+   {
+       string Name { get; }
+       double GetPrice();
+   }
+   ```
+
+2. **Clases de productos concretos**:
+
+   ```csharp
+   public class Laptop : IProduct
+   {
+       public string Name => "Laptop";
+       public double GetPrice() => 1000;
+   }
+
+   public class Phone : IProduct
+   {
+       public string Name => "Phone";
+       public double GetPrice() => 500;
+   }
+
+   public class Tablet : IProduct
+   {
+       public string Name => "Tablet";
+       public double GetPrice() => 300;
+   }
+   ```
+
+3. **Fábrica de productos `ProductFactory`**:
+   - Esta fábrica devuelve instancias de productos según el tipo solicitado, evitando que `Order` conozca los detalles de cada producto.
+
+   ```csharp
+   public class ProductFactory
+   {
+       public static IProduct CreateProduct(string productName)
+       {
+           return productName switch
+           {
+               "Laptop" => new Laptop(),
+               "Phone" => new Phone(),
+               "Tablet" => new Tablet(),
+               _ => throw new ArgumentException("Producto desconocido")
+           };
+       }
+   }
+   ```
+
+4. **Ajustes en la clase `Order`**:
+   - Ahora, `Order` puede solicitar productos a través de `ProductFactory` y calcular el precio total sin conocer los detalles de cada producto.
+
+   ```csharp
+   public class Order
+   {
+       public List<IProduct> Products { get; private set; }
+       public double TotalPrice { get; private set; }
+
+       public Order(List<string> productNames)
+       {
+           Products = new List<IProduct>();
+           foreach (var productName in productNames)
+           {
+               var product = ProductFactory.CreateProduct(productName);
+               Products.Add(product);
+           }
+           CalculateTotalPrice();
+       }
+
+       private void CalculateTotalPrice()
+       {
+           TotalPrice = 0;
+           foreach (var product in Products)
+           {
+               TotalPrice += product.GetPrice();
+           }
+       }
+   }
+   ```
+
+5. **Uso del sistema**:
+   - Ahora podemos crear una orden sin que `Order` dependa de los detalles específicos de los productos.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var productNames = new List<string> { "Laptop", "Phone" };
+           var order = new Order(productNames);
+
+           Console.WriteLine($"Precio total de la orden: {order.TotalPrice}");
+       }
+   }
+   ```
+
+### Beneficios de esta implementación:
+
+- **Desacoplamiento**: `Order` ya no necesita conocer los detalles específicos de cada producto, lo cual hace que el código sea más flexible y fácil de mantener.
+- **Extensibilidad**: Si se agregan nuevos productos, solo necesitamos implementar una nueva clase de producto y agregarla a `ProductFactory`, sin modificar `Order`.
+- **Cohesión**: La responsabilidad de definir el precio y las características del producto recae ahora en cada clase de producto, siguiendo el Principio de Responsabilidad Única (SRP).
+
+### Cuestionamiento 5: ¿Qué técnicas de refactorización podrías aplicar para reducir la complejidad de `PrintInvoice`?
+
+Actualmente, el método `PrintInvoice` en la clase `Order` imprime detalles de la orden directamente en la consola. Este enfoque tiene varios problemas:
+
+- **Violación del Principio de Responsabilidad Única (SRP)**: `Order` tiene múltiples responsabilidades, incluyendo manejar datos de la orden y encargarse de la presentación.
+- **Falta de flexibilidad**: `PrintInvoice` está acoplado a la salida en consola. Si en el futuro se requiere imprimir en un archivo o generar un PDF, habría que modificar el método.
+- **Dificultad para extender**: Si necesitamos varios formatos de factura (por ejemplo, HTML, JSON o PDF), el método `PrintInvoice` crecería en complejidad.
+
+Para resolver estos problemas, podemos aplicar el patrón **Strategy** o **Decorator**. Estos patrones nos permiten desacoplar la lógica de impresión de la clase `Order`, facilitando el cambio de formatos de salida sin modificar el código base de la orden.
+
+### Pasos para implementar el patrón Strategy para la impresión de facturas
+
+1. **Crear una interfaz de estrategia para impresión**:
+   - Definimos una interfaz `IInvoiceFormatter` con un método `FormatInvoice` que genera la representación de la factura en el formato deseado.
+
+2. **Implementar estrategias de impresión concretas**:
+   - Creamos clases como `ConsoleInvoiceFormatter`, `FileInvoiceFormatter`, o `HtmlInvoiceFormatter` para soportar diferentes formatos de salida.
+
+3. **Delegar la impresión en la clase `Order`**:
+   - `Order` recibirá una instancia de `IInvoiceFormatter` y usará esta instancia para imprimir la factura en el formato seleccionado.
+
+### Ejemplo de Implementación del Patrón Strategy para Facturación
+
+1. **Interfaz `IInvoiceFormatter`**:
+
+   ```csharp
+   public interface IInvoiceFormatter
+   {
+       void FormatInvoice(Order order);
+   }
+   ```
+
+2. **Implementaciones de Formato de Factura**:
+
+   - **Formato de Factura en Consola**:
+
+     ```csharp
+     public class ConsoleInvoiceFormatter : IInvoiceFormatter
+     {
+         public void FormatInvoice(Order order)
+         {
+             Console.WriteLine($"Order ID: {order.OrderId}");
+             Console.WriteLine($"Customer: {order.CustomerName}");
+             Console.WriteLine("Products:");
+             foreach (var product in order.Products)
+             {
+                 Console.WriteLine($"- {product.Name}: ${product.GetPrice()}");
+             }
+             Console.WriteLine($"Total Price: ${order.TotalPrice}");
+         }
+     }
+     ```
+
+   - **Formato de Factura en HTML**:
+
+     ```csharp
+     public class HtmlInvoiceFormatter : IInvoiceFormatter
+     {
+         public void FormatInvoice(Order order)
+         {
+             var html = $"<h1>Order ID: {order.OrderId}</h1>";
+             html += $"<p>Customer: {order.CustomerName}</p>";
+             html += "<ul>";
+             foreach (var product in order.Products)
+             {
+                 html += $"<li>{product.Name}: ${product.GetPrice()}</li>";
+             }
+             html += "</ul>";
+             html += $"<p>Total Price: ${order.TotalPrice}</p>";
+             
+             Console.WriteLine(html); // Para demo, en una app real, esto se guardaría en un archivo HTML.
+         }
+     }
+     ```
+
+3. **Ajustes en la Clase `Order`**:
+   - La clase `Order` ahora acepta una instancia de `IInvoiceFormatter`, eliminando la responsabilidad de impresión directa.
+
+   ```csharp
+   public class Order
+   {
+       private readonly IInvoiceFormatter _invoiceFormatter;
+       public int OrderId { get; private set; }
+       public string CustomerName { get; private set; }
+       public List<IProduct> Products { get; private set; }
+       public double TotalPrice { get; private set; }
+
+       public Order(int orderId, string customerName, List<IProduct> products, IInvoiceFormatter invoiceFormatter)
+       {
+           OrderId = orderId;
+           CustomerName = customerName;
+           Products = products;
+           _invoiceFormatter = invoiceFormatter;
+           CalculateTotalPrice();
+       }
+
+       private void CalculateTotalPrice()
+       {
+           TotalPrice = 0;
+           foreach (var product in Products)
+           {
+               TotalPrice += product.GetPrice();
+           }
+       }
+
+       public void PrintInvoice()
+       {
+           _invoiceFormatter.FormatInvoice(this);
+       }
+   }
+   ```
+
+4. **Uso del Sistema**:
+   - En el programa principal, podemos elegir diferentes estrategias de impresión y pasarla al pedido.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var products = new List<IProduct> { new Laptop(), new Phone() };
+           var consoleFormatter = new ConsoleInvoiceFormatter();
+
+           var order = new Order(1, "Jane Doe", products, consoleFormatter);
+           order.PrintInvoice();
+
+           var htmlFormatter = new HtmlInvoiceFormatter();
+           var htmlOrder = new Order(2, "John Smith", products, htmlFormatter);
+           htmlOrder.PrintInvoice();
+       }
+   }
+   ```
+
+### Beneficios de esta Implementación:
+
+- **Desacoplamiento**: `Order` ya no depende de un formato específico de impresión, lo cual facilita cambios en la presentación sin modificar la clase.
+- **Extensibilidad**: Podemos agregar nuevas estrategias de impresión sin afectar el código existente de `Order`.
+- **Flexibilidad**: Permite seleccionar el formato de salida en tiempo de ejecución, adaptándose a diferentes necesidades de usuario o ambiente.
+
+### Cuestionamiento 6: ¿De qué manera podrías desacoplar el código de `ProcessOrder` y `CancelOrder`?
+
+Actualmente, los métodos `ProcessOrder` y `CancelOrder` están implementados directamente dentro de la clase `Order`, utilizando condicionales para verificar el estado actual del pedido antes de realizar una acción. Esto presenta los siguientes problemas:
+
+- **Condicionales complejos**: Cada método tiene que verificar el estado del pedido y actuar en consecuencia, lo que complica el código a medida que se añaden más estados.
+- **Violación del Principio de Responsabilidad Única (SRP)**: La clase `Order` está manejando tanto la lógica de negocio como la gestión de estados, lo cual podría estar mejor distribuido.
+- **Dificultad para extender**: Si se agregan nuevos estados (por ejemplo, "Shipped", "Delivered"), habría que modificar los métodos para incluir la nueva lógica de manejo.
+
+Para resolver esto, podemos usar el patrón **State**. Este patrón nos permite encapsular el comportamiento específico de cada estado en su propia clase, haciendo que `Order` delegue la lógica de manejo de estados a estas clases.
+
+### Pasos para implementar el patrón State:
+
+1. **Definir una interfaz `IOrderState`**:
+   - La interfaz `IOrderState` define los métodos `ProcessOrder` y `CancelOrder` que cada estado debe implementar.
+
+2. **Crear clases para cada estado**:
+   - Creamos una clase para cada estado, como `NewState`, `ProcessedState`, y `CancelledState`. Cada clase implementa `IOrderState` y define su comportamiento específico.
+
+3. **Agregar una referencia al estado en `Order`**:
+   - La clase `Order` tendrá una referencia a `IOrderState` y delegará las acciones de procesamiento y cancelación a su estado actual.
+
+### Ejemplo de implementación del patrón State
+
+1. **Interfaz `IOrderState`**:
+
+   ```csharp
+   public interface IOrderState
+   {
+       void ProcessOrder(Order order);
+       void CancelOrder(Order order);
+   }
+   ```
+
+2. **Implementaciones de los estados**:
+
+   - **Estado Nuevo (`NewState`)**:
+
+     ```csharp
+     public class NewState : IOrderState
+     {
+         public void ProcessOrder(Order order)
+         {
+             Console.WriteLine("Processing order...");
+             order.SetState(new ProcessedState());
+         }
+
+         public void CancelOrder(Order order)
+         {
+             Console.WriteLine("Cancelling order...");
+             order.SetState(new CancelledState());
+         }
+     }
+     ```
+
+   - **Estado Procesado (`ProcessedState`)**:
+
+     ```csharp
+     public class ProcessedState : IOrderState
+     {
+         public void ProcessOrder(Order order)
+         {
+             Console.WriteLine("Order is already processed.");
+         }
+
+         public void CancelOrder(Order order)
+         {
+             Console.WriteLine("Cannot cancel a processed order.");
+         }
+     }
+     ```
+
+   - **Estado Cancelado (`CancelledState`)**:
+
+     ```csharp
+     public class CancelledState : IOrderState
+     {
+         public void ProcessOrder(Order order)
+         {
+             Console.WriteLine("Cannot process a cancelled order.");
+         }
+
+         public void CancelOrder(Order order)
+         {
+             Console.WriteLine("Order is already cancelled.");
+         }
+     }
+     ```
+
+3. **Ajustes en la clase `Order`**:
+
+   ```csharp
+   public class Order
+   {
+       private IOrderState _state;
+       public int OrderId { get; private set; }
+       public string CustomerName { get; private set; }
+
+       public Order(int orderId, string customerName)
+       {
+           OrderId = orderId;
+           CustomerName = customerName;
+           _state = new NewState(); // Estado inicial
+       }
+
+       public void SetState(IOrderState state)
+       {
+           _state = state;
+       }
+
+       public void ProcessOrder()
+       {
+           _state.ProcessOrder(this);
+       }
+
+       public void CancelOrder()
+       {
+           _state.CancelOrder(this);
+       }
+   }
+   ```
+
+4. **Uso del sistema**:
+
+   - Ahora, al crear un pedido, se gestiona automáticamente su estado utilizando el patrón State.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var order = new Order(1, "Alice");
+
+           order.ProcessOrder(); // Cambia a "ProcessedState"
+           order.CancelOrder();  // Intentará cancelar, pero ya está procesado, así que no será posible.
+
+           order = new Order(2, "Bob");
+
+           order.CancelOrder();  // Cambia a "CancelledState"
+           order.ProcessOrder(); // Intentará procesar, pero no puede procesar una orden cancelada.
+       }
+   }
+   ```
+
+### Beneficios de esta implementación:
+
+- **Desacoplamiento**: La lógica de cambio de estado se delega a clases específicas, manteniendo la clase `Order` simple y enfocada en la lógica de negocio general.
+- **Extensibilidad**: Si se necesita agregar nuevos estados, simplemente se crean nuevas clases de estado sin modificar las existentes.
+- **Claridad y Mantenibilidad**: Cada estado maneja su propio comportamiento, lo que hace que el código sea más fácil de entender y mantener.
+
+### Cuestionamiento 7: ¿Cómo mejorarías la reutilización y mantenibilidad del método `ApplyDiscount`?
+
+Actualmente, `ApplyDiscount` solo aplica un descuento fijo al cliente "John Doe", lo que limita la funcionalidad y genera un acoplamiento innecesario con el nombre del cliente. Para mejorar la reutilización y flexibilidad del código, podemos aplicar el patrón **Strategy**, que permite definir diferentes estrategias de descuento y seleccionar la adecuada según las condiciones del pedido o el tipo de cliente.
+
+### Pasos para implementar el patrón Strategy en el cálculo de descuentos
+
+1. **Crear una interfaz de estrategia de descuento (`IDiscountStrategy`)**:
+   - Definimos una interfaz `IDiscountStrategy` con el método `ApplyDiscount`, que recibirá el precio total y retornará el precio con el descuento aplicado.
+
+2. **Crear clases concretas para cada tipo de descuento**:
+   - Implementamos diferentes estrategias de descuento (por ejemplo, `NoDiscount`, `LoyalCustomerDiscount`, `SeasonalDiscount`) que calculan el descuento según las necesidades de negocio.
+
+3. **Agregar una propiedad de estrategia en `Order`**:
+   - La clase `Order` recibirá una instancia de `IDiscountStrategy` y la usará en lugar de tener una lógica específica en el método `ApplyDiscount`.
+
+### Ejemplo de implementación del patrón Strategy para el cálculo de descuentos
+
+1. **Interfaz `IDiscountStrategy`**:
+
+   ```csharp
+   public interface IDiscountStrategy
+   {
+       double ApplyDiscount(double totalPrice);
+   }
+   ```
+
+2. **Implementaciones de estrategias de descuento**:
+
+   - **Sin descuento (`NoDiscount`)**:
+
+     ```csharp
+     public class NoDiscount : IDiscountStrategy
+     {
+         public double ApplyDiscount(double totalPrice) => totalPrice;
+     }
+     ```
+
+   - **Descuento para clientes leales (`LoyalCustomerDiscount`)**:
+
+     ```csharp
+     public class LoyalCustomerDiscount : IDiscountStrategy
+     {
+         public double ApplyDiscount(double totalPrice) => totalPrice * 0.9; // 10% de descuento
+     }
+     ```
+
+   - **Descuento de temporada (`SeasonalDiscount`)**:
+
+     ```csharp
+     public class SeasonalDiscount : IDiscountStrategy
+     {
+         public double ApplyDiscount(double totalPrice) => totalPrice * 0.85; // 15% de descuento
+     }
+     ```
+
+3. **Ajustes en la clase `Order`**:
+
+   - `Order` ahora recibirá la estrategia de descuento como una propiedad, lo cual permite aplicar diferentes descuentos sin cambiar el código de la clase.
+
+   ```csharp
+   public class Order
+   {
+       private readonly IDiscountStrategy _discountStrategy;
+       public double TotalPrice { get; private set; }
+       public List<IProduct> Products { get; private set; }
+
+       public Order(List<IProduct> products, IDiscountStrategy discountStrategy)
+       {
+           Products = products;
+           _discountStrategy = discountStrategy;
+           CalculateTotalPrice();
+       }
+
+       private void CalculateTotalPrice()
+       {
+           TotalPrice = 0;
+           foreach (var product in Products)
+           {
+               TotalPrice += product.GetPrice();
+           }
+       }
+
+       public void ApplyDiscount()
+       {
+           TotalPrice = _discountStrategy.ApplyDiscount(TotalPrice);
+       }
+   }
+   ```
+
+4. **Uso del sistema**:
+
+   - Al crear una orden, ahora se puede asignar cualquier estrategia de descuento según la situación o tipo de cliente.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var products = new List<IProduct> { new Laptop(), new Phone() };
+           IDiscountStrategy discountStrategy = new LoyalCustomerDiscount();
+
+           var order = new Order(products, discountStrategy);
+           order.ApplyDiscount();
+           
+           Console.WriteLine($"Precio total con descuento: {order.TotalPrice}");
+       }
+   }
+   ```
+
+### Beneficios de esta implementación
+
+- **Flexibilidad**: Podemos cambiar fácilmente la estrategia de descuento sin modificar el código de `Order`.
+- **Extensibilidad**: Es sencillo agregar nuevos tipos de descuento en el futuro, solo creando nuevas clases que implementen `IDiscountStrategy`.
+- **Desacoplamiento**: `Order` no necesita conocer detalles sobre cómo se calcula cada descuento, lo que simplifica el código y mejora la mantenibilidad.
+
+### Cuestionamiento 8: ¿Es eficiente y claro el método `CalculateTotalPrice`?
+
+Actualmente, el método `CalculateTotalPrice` en la clase `Order` usa condicionales para determinar el precio de cada producto basado en nombres específicos. Esto presenta algunos problemas:
+
+- **Dependencia de cadenas hardcoded**: Esto no solo es propenso a errores, sino que también hace que el código sea menos claro y más difícil de modificar.
+- **Falta de extensibilidad**: Si se agregan nuevos productos o se cambian los precios, el código necesita modificarse, lo cual viola el Principio Abierto/Cerrado.
+- **Poca flexibilidad**: La lógica de cálculo de precios está acoplada a la clase `Order`, limitando la posibilidad de reutilizarla en otros contextos.
+
+Para mejorar la eficiencia y claridad de `CalculateTotalPrice`, podemos usar el patrón **Composite** o **Factory Method**. Aquí emplearemos **Composite** para representar cada producto como un objeto independiente que se agrega a la orden. Cada producto puede calcular su propio precio, eliminando la necesidad de condicionales en `Order`.
+
+### Pasos para implementar el patrón Composite para el cálculo de precios
+
+1. **Crear una interfaz para los productos**:
+   - Definimos una interfaz `IProduct` con un método `GetPrice()` que retorna el precio de cada producto.
+
+2. **Implementar clases de productos concretos**:
+   - Cada producto concreto (`Laptop`, `Phone`, `Tablet`) implementa `IProduct` y define su precio específico.
+
+3. **Modificar la clase `Order` para usar una lista de productos**:
+   - `Order` simplemente recorrerá los productos y sumará sus precios llamando a `GetPrice()`.
+
+### Ejemplo de implementación del patrón Composite para el cálculo de precios
+
+1. **Interfaz `IProduct`**:
+
+   ```csharp
+   public interface IProduct
+   {
+       string Name { get; }
+       double GetPrice();
+   }
+   ```
+
+2. **Clases de productos concretos**:
+
+   - **Clase `Laptop`**:
+
+     ```csharp
+     public class Laptop : IProduct
+     {
+         public string Name => "Laptop";
+         public double GetPrice() => 1000;
+     }
+     ```
+
+   - **Clase `Phone`**:
+
+     ```csharp
+     public class Phone : IProduct
+     {
+         public string Name => "Phone";
+         public double GetPrice() => 500;
+     }
+     ```
+
+   - **Clase `Tablet`**:
+
+     ```csharp
+     public class Tablet : IProduct
+     {
+         public string Name => "Tablet";
+         public double GetPrice() => 300;
+     }
+     ```
+
+3. **Modificar la clase `Order`**:
+
+   - En la clase `Order`, ahora tenemos una lista de `IProduct`, y `CalculateTotalPrice` solo necesita recorrer esta lista para obtener el precio de cada producto.
+
+   ```csharp
+   public class Order
+   {
+       public List<IProduct> Products { get; private set; }
+       public double TotalPrice { get; private set; }
+
+       public Order(List<IProduct> products)
+       {
+           Products = products;
+           CalculateTotalPrice();
+       }
+
+       private void CalculateTotalPrice()
+       {
+           TotalPrice = 0;
+           foreach (var product in Products)
+           {
+               TotalPrice += product.GetPrice();
+           }
+       }
+   }
+   ```
+
+4. **Uso del sistema**:
+
+   - Ahora, al crear una orden, simplemente agregamos productos a la lista, y `Order` calcula el precio total llamando a `GetPrice()` para cada producto.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var products = new List<IProduct> { new Laptop(), new Phone(), new Tablet() };
+           var order = new Order(products);
+
+           Console.WriteLine($"Precio total de la orden: {order.TotalPrice}");
+       }
+   }
+   ```
+
+### Beneficios de esta implementación
+
+- **Claridad y simplicidad**: El cálculo de precios es más claro y directo, sin condicionales o nombres hardcoded.
+- **Extensibilidad**: Podemos agregar nuevos productos creando nuevas clases sin modificar `Order`.
+- **Reutilización**: `IProduct` puede usarse en otros contextos fuera de `Order`, haciendo que la lógica de productos sea más reutilizable.
+
+### Cuestionamiento 9: ¿Cómo podríamos modificar el método `PrintInvoice` para permitir exportar la factura en diferentes formatos?
+
+Actualmente, `PrintInvoice` está acoplado a la salida en consola. Si en el futuro necesitamos generar facturas en otros formatos, como HTML, JSON o PDF, el método `PrintInvoice` crecerá en complejidad y requerirá cambios constantes, lo cual va en contra del Principio Abierto/Cerrado (OCP).
+
+Para resolver esto, podemos emplear el patrón **Adapter** o **Decorator**. En este caso, el patrón **Adapter** es una buena opción, ya que nos permite adaptar el formato de salida a varios destinos sin cambiar la clase `Order`. Cada adaptador implementará una interfaz común para generar el formato deseado.
+
+### Pasos para implementar el patrón Adapter para formatos de factura
+
+1. **Crear una interfaz para el formateador de factura (`IInvoiceFormatter`)**:
+   - Definimos una interfaz `IInvoiceFormatter` con el método `FormatInvoice`, que generará la representación de la factura en el formato necesario.
+
+2. **Implementar adaptadores concretos para cada formato**:
+   - Implementamos clases como `ConsoleInvoiceFormatter`, `HtmlInvoiceFormatter` y `JsonInvoiceFormatter` que generan la factura en diferentes formatos.
+
+3. **Modificar `Order` para aceptar una instancia de `IInvoiceFormatter`**:
+   - `Order` delegará la lógica de formato al `IInvoiceFormatter`, permitiendo diferentes representaciones de la factura.
+
+### Ejemplo de implementación del patrón Adapter para facturas
+
+1. **Interfaz `IInvoiceFormatter`**:
+
+   ```csharp
+   public interface IInvoiceFormatter
+   {
+       string FormatInvoice(Order order);
+   }
+   ```
+
+2. **Implementaciones de los formatos de factura**:
+
+   - **Formato en Consola (`ConsoleInvoiceFormatter`)**:
+
+     ```csharp
+     public class ConsoleInvoiceFormatter : IInvoiceFormatter
+     {
+         public string FormatInvoice(Order order)
+         {
+             var invoice = $"Order ID: {order.OrderId}\n";
+             invoice += $"Customer: {order.CustomerName}\n";
+             invoice += "Products:\n";
+             foreach (var product in order.Products)
+             {
+                 invoice += $"- {product.Name}: ${product.GetPrice()}\n";
+             }
+             invoice += $"Total Price: ${order.TotalPrice}\n";
+             Console.WriteLine(invoice); // Directo en consola
+             return invoice;
+         }
+     }
+     ```
+
+   - **Formato HTML (`HtmlInvoiceFormatter`)**:
+
+     ```csharp
+     public class HtmlInvoiceFormatter : IInvoiceFormatter
+     {
+         public string FormatInvoice(Order order)
+         {
+             var html = $"<h1>Order ID: {order.OrderId}</h1>";
+             html += $"<p>Customer: {order.CustomerName}</p>";
+             html += "<ul>";
+             foreach (var product in order.Products)
+             {
+                 html += $"<li>{product.Name}: ${product.GetPrice()}</li>";
+             }
+             html += "</ul>";
+             html += $"<p>Total Price: ${order.TotalPrice}</p>";
+             
+             return html;
+         }
+     }
+     ```
+
+   - **Formato JSON (`JsonInvoiceFormatter`)**:
+
+     ```csharp
+     using Newtonsoft.Json;
+
+     public class JsonInvoiceFormatter : IInvoiceFormatter
+     {
+         public string FormatInvoice(Order order)
+         {
+             var invoice = new
+             {
+                 OrderId = order.OrderId,
+                 Customer = order.CustomerName,
+                 Products = order.Products.Select(p => new { p.Name, Price = p.GetPrice() }),
+                 TotalPrice = order.TotalPrice
+             };
+             return JsonConvert.SerializeObject(invoice, Formatting.Indented);
+         }
+     }
+     ```
+
+3. **Ajustes en la clase `Order`**:
+   - `Order` ahora recibe un `IInvoiceFormatter` y lo utiliza para formatear la factura sin estar acoplado a un formato específico.
+
+   ```csharp
+   public class Order
+   {
+       private readonly IInvoiceFormatter _invoiceFormatter;
+       public int OrderId { get; private set; }
+       public string CustomerName { get; private set; }
+       public List<IProduct> Products { get; private set; }
+       public double TotalPrice { get; private set; }
+
+       public Order(int orderId, string customerName, List<IProduct> products, IInvoiceFormatter invoiceFormatter)
+       {
+           OrderId = orderId;
+           CustomerName = customerName;
+           Products = products;
+           _invoiceFormatter = invoiceFormatter;
+           CalculateTotalPrice();
+       }
+
+       private void CalculateTotalPrice()
+       {
+           TotalPrice = 0;
+           foreach (var product in Products)
+           {
+               TotalPrice += product.GetPrice();
+           }
+       }
+
+       public void PrintInvoice()
+       {
+           var formattedInvoice = _invoiceFormatter.FormatInvoice(this);
+           // En un caso real, el "formattedInvoice" se usaría según el formato.
+       }
+   }
+   ```
+
+4. **Uso del sistema**:
+
+   - Podemos cambiar el formato de salida en tiempo de ejecución simplemente eligiendo un adaptador diferente.
+
+   ```csharp
+   public class Program
+   {
+       public static void Main()
+       {
+           var products = new List<IProduct> { new Laptop(), new Phone() };
+
+           IInvoiceFormatter consoleFormatter = new ConsoleInvoiceFormatter();
+           IInvoiceFormatter htmlFormatter = new HtmlInvoiceFormatter();
+           IInvoiceFormatter jsonFormatter = new JsonInvoiceFormatter();
+
+           var order = new Order(1, "Alice", products, consoleFormatter);
+           order.PrintInvoice();
+
+           var htmlOrder = new Order(2, "Bob", products, htmlFormatter);
+           Console.WriteLine(htmlOrder.PrintInvoice());
+
+           var jsonOrder = new Order(3, "Charlie", products, jsonFormatter);
+           Console.WriteLine(jsonOrder.PrintInvoice());
+       }
+   }
+   ```
+
+### Beneficios de esta Implementación
+
+- **Extensibilidad**: Podemos agregar fácilmente nuevos formatos de factura sin modificar la clase `Order`.
+- **Desacoplamiento**: `Order` no está acoplado a un formato específico de factura, lo que facilita su reutilización.
+- **Flexibilidad**: Podemos cambiar el formato de salida de la factura en tiempo de ejecución.
+
+### Cuestionamiento 10: ¿Cómo asegurarías que este código cumple con el Principio de Responsabilidad Única (SRP)?
+
+Actualmente, la clase `Order` realiza varias funciones que se podrían dividir en responsabilidades específicas. Estas incluyen:
+
+1. **Gestión de productos**: `Order` contiene y gestiona la lista de productos.
+2. **Cálculo de precios**: `Order` calcula el precio total de los productos.
+3. **Aplicación de descuentos**: `Order` aplica una estrategia de descuento al precio total.
+4. **Gestión de estados**: `Order` contiene lógica relacionada con el estado de un pedido (procesar, cancelar).
+5. **Impresión de la factura**: `Order` imprime o exporta la factura en diferentes formatos.
+
+El Principio de Responsabilidad Única establece que cada clase debe tener una única responsabilidad o razón para cambiar. En el caso de `Order`, sus múltiples responsabilidades pueden llevar a un código difícil de mantener y extender. A continuación, propongo cómo podríamos dividir estas responsabilidades en clases específicas.
+
+### Descomposición de `Order` en clases independientes
+
+1. **Clase `Order` (Clase principal de negocio)**:
+   - La clase `Order` se convierte en el núcleo del pedido y solo contiene datos esenciales (por ejemplo, `OrderId`, `CustomerName`, y `Products`).
+   - `Order` delega el cálculo de precios, la aplicación de descuentos, la gestión de estados y la generación de facturas a otras clases, siguiendo el SRP.
+
+2. **Clase `PriceCalculator`**:
+   - Encapsula la lógica de cálculo de precios.
+   - Esta clase se encargará de calcular el precio total de la lista de productos, evitando que `Order` tenga que hacerlo.
+
+3. **Clase `DiscountManager`**:
+   - Gestiona la aplicación de estrategias de descuento usando el patrón Strategy.
+   - `Order` delega la aplicación de descuentos a esta clase.
+
+4. **Clase `OrderState` (concretamente, implementada con el patrón State)**:
+   - Gestiona el estado actual del pedido y las transiciones de estado (por ejemplo, de "Nuevo" a "Procesado" o "Cancelado").
+   - `Order` delega las acciones de cambio de estado a esta clase.
+
+5. **Clase `InvoiceFormatter`**:
+   - Se encarga de dar formato a la factura en distintos formatos (consola, HTML, JSON).
+   - `Order` delega la generación de la factura a esta clase, permitiendo que `Order` solo contenga datos del pedido.
+
+### Estructura de la solución
+
+A continuación, presentamos un esquema de cómo se vería cada una de estas clases en conjunto con la clase `Order` simplificada.
+
+1. **Clase `Order` Simplificada**:
+
+   ```csharp
+   public class Order
+   {
+       public int OrderId { get; private set; }
+       public string CustomerName { get; private set; }
+       public List<IProduct> Products { get; private set; }
+       private IOrderState _state;
+       private PriceCalculator _priceCalculator;
+       private DiscountManager _discountManager;
+       private IInvoiceFormatter _invoiceFormatter;
+
+       public Order(int orderId, string customerName, List<IProduct> products, 
+                    PriceCalculator priceCalculator, DiscountManager discountManager, IInvoiceFormatter invoiceFormatter)
+       {
+           OrderId = orderId;
+           CustomerName = customerName;
+           Products = products;
+           _priceCalculator = priceCalculator;
+           _discountManager = discountManager;
+           _invoiceFormatter = invoiceFormatter;
+           _state = new NewState(); // Estado inicial
+       }
+
+       public double GetTotalPrice()
+       {
+           double totalPrice = _priceCalculator.CalculateTotalPrice(Products);
+           return _discountManager.ApplyDiscount(totalPrice);
+       }
+
+       public void ProcessOrder()
+       {
+           _state.ProcessOrder(this);
+       }
+
+       public void CancelOrder()
+       {
+           _state.CancelOrder(this);
+       }
+
+       public void PrintInvoice()
+       {
+           Console.WriteLine(_invoiceFormatter.FormatInvoice(this));
+       }
+   }
+   ```
+
+2. **Clase `PriceCalculator`**:
+
+   ```csharp
+   public class PriceCalculator
+   {
+       public double CalculateTotalPrice(List<IProduct> products)
+       {
+           double totalPrice = 0;
+           foreach (var product in products)
+           {
+               totalPrice += product.GetPrice();
+           }
+           return totalPrice;
+       }
+   }
+   ```
+
+3. **Clase `DiscountManager`**:
+
+   ```csharp
+   public class DiscountManager
+   {
+       private readonly IDiscountStrategy _discountStrategy;
+
+       public DiscountManager(IDiscountStrategy discountStrategy)
+       {
+           _discountStrategy = discountStrategy;
+       }
+
+       public double ApplyDiscount(double totalPrice)
+       {
+           return _discountStrategy.ApplyDiscount(totalPrice);
+       }
+   }
+   ```
+
+4. **Implementación del Estado de Pedido (`OrderState`)**:
+
+   - Aquí, los detalles de `IOrderState`, `NewState`, `ProcessedState`, etc., se mantienen como discutimos anteriormente para manejar los estados del pedido, de modo que `Order` solo delega las transiciones.
+
+5. **Clase `InvoiceFormatter` (interfaz `IInvoiceFormatter` con adaptadores)**:
+
+   - `ConsoleInvoiceFormatter`, `HtmlInvoiceFormatter`, `JsonInvoiceFormatter` se implementan como vimos anteriormente para generar la factura en distintos formatos, permitiendo que `Order` delegue esta responsabilidad.
+
+### Beneficios de esta Implementación
+
+- **Responsabilidad única**: Cada clase tiene una sola razón para cambiar, haciendo el sistema más mantenible y flexible.
+- **Desacoplamiento**: `Order` ya no contiene lógica de negocio para cada función específica; en su lugar, delega a otras clases especializadas.
+- **Extensibilidad**: Agregar nuevos estados, tipos de descuento o formatos de factura no requiere cambios en `Order`, sino en las clases dedicadas a cada función.
