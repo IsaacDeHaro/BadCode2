@@ -1,0 +1,551 @@
+Aplicaré los pasos y patrones sugeridos para refactorizar y mejorar el diseño del problema inicial de una tienda en línea con gestión de pedidos, siguiendo los principios y patrones de diseño que hemos revisado. El objetivo es estructurar el código en clases más organizadas y especializadas, aplicando el **Principio de Responsabilidad Única (SRP)** y patrones de diseño como **Strategy**, **State**, y **Adapter**.
+
+### Estructura Refactorizada del Código
+
+1. **Clase `Order` Simplificada**: La clase principal `Order` se encarga de almacenar los datos esenciales del pedido (como ID, cliente y productos), delegando las tareas especializadas a otras clases.
+
+2. **Manejo de Cálculo de Precio (`PriceCalculator`)**: Una clase dedicada que calcula el precio total basado en los productos.
+
+3. **Gestión de Descuentos (`DiscountManager`)**: Se encarga de aplicar descuentos específicos utilizando el patrón **Strategy** para distintas estrategias de descuento.
+
+4. **Manejo de Estados (`OrderState`)**: Se usa el patrón **State** para encapsular los comportamientos de cada estado del pedido (Nuevo, Procesado, Cancelado).
+
+5. **Generación de Factura (`InvoiceFormatter`)**: Aplicando el patrón **Adapter**, cada formato de factura tiene su propia clase para crear representaciones específicas (Consola, HTML, JSON).
+
+A continuación, te presento la implementación de cada una de estas clases.
+
+---
+
+### Clase `Order`
+
+```csharp
+public class Order
+{
+    public int OrderId { get; private set; }
+    public string CustomerName { get; private set; }
+    public List<IProduct> Products { get; private set; }
+    private IOrderState _state;
+    private PriceCalculator _priceCalculator;
+    private DiscountManager _discountManager;
+    private IInvoiceFormatter _invoiceFormatter;
+
+    public Order(int orderId, string customerName, List<IProduct> products, 
+                 PriceCalculator priceCalculator, DiscountManager discountManager, IInvoiceFormatter invoiceFormatter)
+    {
+        OrderId = orderId;
+        CustomerName = customerName;
+        Products = products;
+        _priceCalculator = priceCalculator;
+        _discountManager = discountManager;
+        _invoiceFormatter = invoiceFormatter;
+        _state = new NewState(); // Estado inicial
+    }
+
+    public double GetTotalPrice()
+    {
+        double totalPrice = _priceCalculator.CalculateTotalPrice(Products);
+        return _discountManager.ApplyDiscount(totalPrice);
+    }
+
+    public void ProcessOrder()
+    {
+        _state.ProcessOrder(this);
+    }
+
+    public void CancelOrder()
+    {
+        _state.CancelOrder(this);
+    }
+
+    public void PrintInvoice()
+    {
+        Console.WriteLine(_invoiceFormatter.FormatInvoice(this));
+    }
+
+    public void SetState(IOrderState state)
+    {
+        _state = state;
+    }
+}
+```
+
+---
+
+### Clase `PriceCalculator`
+
+```csharp
+public class PriceCalculator
+{
+    public double CalculateTotalPrice(List<IProduct> products)
+    {
+        double totalPrice = 0;
+        foreach (var product in products)
+        {
+            totalPrice += product.GetPrice();
+        }
+        return totalPrice;
+    }
+}
+```
+
+---
+
+### Clase `DiscountManager` con Patrón Strategy
+
+```csharp
+public class DiscountManager
+{
+    private readonly IDiscountStrategy _discountStrategy;
+
+    public DiscountManager(IDiscountStrategy discountStrategy)
+    {
+        _discountStrategy = discountStrategy;
+    }
+
+    public double ApplyDiscount(double totalPrice)
+    {
+        return _discountStrategy.ApplyDiscount(totalPrice);
+    }
+}
+
+public interface IDiscountStrategy
+{
+    double ApplyDiscount(double totalPrice);
+}
+
+public class NoDiscount : IDiscountStrategy
+{
+    public double ApplyDiscount(double totalPrice) => totalPrice;
+}
+
+public class LoyalCustomerDiscount : IDiscountStrategy
+{
+    public double ApplyDiscount(double totalPrice) => totalPrice * 0.9; // 10% descuento
+}
+
+public class SeasonalDiscount : IDiscountStrategy
+{
+    public double ApplyDiscount(double totalPrice) => totalPrice * 0.85; // 15% descuento
+}
+```
+
+---
+
+### Implementación del Patrón State para Estados de `Order`
+
+```csharp
+public interface IOrderState
+{
+    void ProcessOrder(Order order);
+    void CancelOrder(Order order);
+}
+
+public class NewState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("Procesando pedido...");
+        order.SetState(new ProcessedState());
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("Cancelando pedido...");
+        order.SetState(new CancelledState());
+    }
+}
+
+public class ProcessedState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("El pedido ya ha sido procesado.");
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("No se puede cancelar un pedido procesado.");
+    }
+}
+
+public class CancelledState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("No se puede procesar un pedido cancelado.");
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("El pedido ya está cancelado.");
+    }
+}
+```
+
+---
+
+### Formateadores de Factura con Patrón Adapter
+
+```csharp
+public interface IInvoiceFormatter
+{
+    string FormatInvoice(Order order);
+}
+
+public class ConsoleInvoiceFormatter : IInvoiceFormatter
+{
+    public string FormatInvoice(Order order)
+    {
+        var invoice = $"Order ID: {order.OrderId}\n";
+        invoice += $"Customer: {order.CustomerName}\n";
+        invoice += "Products:\n";
+        foreach (var product in order.Products)
+        {
+            invoice += $"- {product.Name}: ${product.GetPrice()}\n";
+        }
+        invoice += $"Total Price: ${order.GetTotalPrice()}\n";
+        return invoice;
+    }
+}
+
+public class HtmlInvoiceFormatter : IInvoiceFormatter
+{
+    public string FormatInvoice(Order order)
+    {
+        var html = $"<h1>Order ID: {order.OrderId}</h1>";
+        html += $"<p>Customer: {order.CustomerName}</p>";
+        html += "<ul>";
+        foreach (var product in order.Products)
+        {
+            html += $"<li>{product.Name}: ${product.GetPrice()}</li>";
+        }
+        html += "</ul>";
+        html += $"<p>Total Price: ${order.GetTotalPrice()}</p>";
+        return html;
+    }
+}
+
+public class JsonInvoiceFormatter : IInvoiceFormatter
+{
+    public string FormatInvoice(Order order)
+    {
+        var invoice = new
+        {
+            OrderId = order.OrderId,
+            Customer = order.CustomerName,
+            Products = order.Products.Select(p => new { p.Name, Price = p.GetPrice() }),
+            TotalPrice = order.GetTotalPrice()
+        };
+        return JsonConvert.SerializeObject(invoice, Formatting.Indented);
+    }
+}
+```
+
+---
+
+### Uso del Sistema
+
+```csharp
+public class Program
+{
+    public static void Main()
+    {
+        var products = new List<IProduct> { new Laptop(), new Phone() };
+
+        // Estrategias de descuento y formateadores
+        IDiscountStrategy discountStrategy = new LoyalCustomerDiscount();
+        IInvoiceFormatter formatter = new HtmlInvoiceFormatter();
+
+        // Crear clases auxiliares
+        var priceCalculator = new PriceCalculator();
+        var discountManager = new DiscountManager(discountStrategy);
+
+        // Crear pedido
+        var order = new Order(1, "Alice", products, priceCalculator, discountManager, formatter);
+
+        // Procesar pedido y mostrar factura
+        order.ProcessOrder();
+        Console.WriteLine(order.PrintInvoice());
+    }
+}
+```
+
+### Resumen
+
+Esta refactorización aplica el SRP y los patrones **Strategy**, **State**, y **Adapter** para dividir las responsabilidades de la clase `Order`, mejorando la claridad, la extensibilidad y la mantenibilidad del código. Ahora, `Order` delega tareas especializadas a otras clases, lo cual permite añadir nuevas funcionalidades (nuevos descuentos, nuevos formatos de factura, o nuevos estados) sin modificar el código principal de la clase `Order`.
+
+# CODIGO COMPLETO
+
+Aquí tienes todo el código unificado en una sola estructura, con los comentarios y clases relevantes aplicadas al problema de gestión de pedidos en una tienda en línea.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Newtonsoft.Json;
+
+public interface IProduct
+{
+    string Name { get; }
+    double GetPrice();
+}
+
+public class Laptop : IProduct
+{
+    public string Name => "Laptop";
+    public double GetPrice() => 1000;
+}
+
+public class Phone : IProduct
+{
+    public string Name => "Phone";
+    public double GetPrice() => 500;
+}
+
+// Interfaz para la Estrategia de Descuento
+public interface IDiscountStrategy
+{
+    double ApplyDiscount(double totalPrice);
+}
+
+public class NoDiscount : IDiscountStrategy
+{
+    public double ApplyDiscount(double totalPrice) => totalPrice;
+}
+
+public class LoyalCustomerDiscount : IDiscountStrategy
+{
+    public double ApplyDiscount(double totalPrice) => totalPrice * 0.9; // 10% descuento
+}
+
+public class SeasonalDiscount : IDiscountStrategy
+{
+    public double ApplyDiscount(double totalPrice) => totalPrice * 0.85; // 15% descuento
+}
+
+// Manejo de Descuentos (Strategy)
+public class DiscountManager
+{
+    private readonly IDiscountStrategy _discountStrategy;
+
+    public DiscountManager(IDiscountStrategy discountStrategy)
+    {
+        _discountStrategy = discountStrategy;
+    }
+
+    public double ApplyDiscount(double totalPrice)
+    {
+        return _discountStrategy.ApplyDiscount(totalPrice);
+    }
+}
+
+// Cálculo de Precio Total
+public class PriceCalculator
+{
+    public double CalculateTotalPrice(List<IProduct> products)
+    {
+        double totalPrice = 0;
+        foreach (var product in products)
+        {
+            totalPrice += product.GetPrice();
+        }
+        return totalPrice;
+    }
+}
+
+// Interfaz de Estado de Pedido (State)
+public interface IOrderState
+{
+    void ProcessOrder(Order order);
+    void CancelOrder(Order order);
+}
+
+public class NewState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("Procesando pedido...");
+        order.SetState(new ProcessedState());
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("Cancelando pedido...");
+        order.SetState(new CancelledState());
+    }
+}
+
+public class ProcessedState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("El pedido ya ha sido procesado.");
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("No se puede cancelar un pedido procesado.");
+    }
+}
+
+public class CancelledState : IOrderState
+{
+    public void ProcessOrder(Order order)
+    {
+        Console.WriteLine("No se puede procesar un pedido cancelado.");
+    }
+
+    public void CancelOrder(Order order)
+    {
+        Console.WriteLine("El pedido ya está cancelado.");
+    }
+}
+
+// Interfaz de Formateador de Factura (Adapter)
+public interface IInvoiceFormatter
+{
+    string FormatInvoice(Order order);
+}
+
+public class ConsoleInvoiceFormatter : IInvoiceFormatter
+{
+    public string FormatInvoice(Order order)
+    {
+        var invoice = $"Order ID: {order.OrderId}\n";
+        invoice += $"Customer: {order.CustomerName}\n";
+        invoice += "Products:\n";
+        foreach (var product in order.Products)
+        {
+            invoice += $"- {product.Name}: ${product.GetPrice()}\n";
+        }
+        invoice += $"Total Price: ${order.GetTotalPrice()}\n";
+        Console.WriteLine(invoice); // Imprimir directamente en consola
+        return invoice;
+    }
+}
+
+public class HtmlInvoiceFormatter : IInvoiceFormatter
+{
+    public string FormatInvoice(Order order)
+    {
+        var html = $"<h1>Order ID: {order.OrderId}</h1>";
+        html += $"<p>Customer: {order.CustomerName}</p>";
+        html += "<ul>";
+        foreach (var product in order.Products)
+        {
+            html += $"<li>{product.Name}: ${product.GetPrice()}</li>";
+        }
+        html += "</ul>";
+        html += $"<p>Total Price: ${order.GetTotalPrice()}</p>";
+        return html;
+    }
+}
+
+public class JsonInvoiceFormatter : IInvoiceFormatter
+{
+    public string FormatInvoice(Order order)
+    {
+        var invoice = new
+        {
+            OrderId = order.OrderId,
+            Customer = order.CustomerName,
+            Products = order.Products.Select(p => new { p.Name, Price = p.GetPrice() }),
+            TotalPrice = order.GetTotalPrice()
+        };
+        return JsonConvert.SerializeObject(invoice, Formatting.Indented);
+    }
+}
+
+// Clase principal de Pedido con SRP y patrones Strategy, State, y Adapter aplicados
+public class Order
+{
+    public int OrderId { get; private set; }
+    public string CustomerName { get; private set; }
+    public List<IProduct> Products { get; private set; 
+    private IOrderState _state;
+    private PriceCalculator _priceCalculator;
+    private DiscountManager _discountManager;
+    private IInvoiceFormatter _invoiceFormatter;
+
+    public Order(int orderId, string customerName, List<IProduct> products, 
+                 PriceCalculator priceCalculator, DiscountManager discountManager, IInvoiceFormatter invoiceFormatter)
+    {
+        OrderId = orderId;
+        CustomerName = customerName;
+        Products = products;
+        _priceCalculator = priceCalculator;
+        _discountManager = discountManager;
+        _invoiceFormatter = invoiceFormatter;
+        _state = new NewState(); // Estado inicial
+    }
+
+    public double GetTotalPrice()
+    {
+        double totalPrice = _priceCalculator.CalculateTotalPrice(Products);
+        return _discountManager.ApplyDiscount(totalPrice);
+    }
+
+    public void ProcessOrder()
+    {
+        _state.ProcessOrder(this);
+    }
+
+    public void CancelOrder()
+    {
+        _state.CancelOrder(this);
+    }
+
+    public void PrintInvoice()
+    {
+        Console.WriteLine(_invoiceFormatter.FormatInvoice(this));
+    }
+
+    public void SetState(IOrderState state)
+    {
+        _state = state;
+    }
+}
+```
+
+---
+
+### Uso del Sistema en la Clase `Program`
+
+Con todas las clases estructuradas, ahora podemos crear un pedido y probar la funcionalidad completa en la clase `Program`.
+
+```csharp
+public class Program
+{
+    public static void Main()
+    {
+        // Crear productos
+        var products = new List<IProduct> { new Laptop(), new Phone() };
+
+        // Definir estrategia de descuento y formateador de factura
+        IDiscountStrategy discountStrategy = new LoyalCustomerDiscount();
+        IInvoiceFormatter formatter = new HtmlInvoiceFormatter();
+
+        // Crear instancias de auxiliares
+        var priceCalculator = new PriceCalculator();
+        var discountManager = new DiscountManager(discountStrategy);
+
+        // Crear pedido
+        var order = new Order(1, "Alice", products, priceCalculator, discountManager, formatter);
+
+        // Procesar pedido
+        order.ProcessOrder();
+
+        // Imprimir factura en el formato especificado
+        order.PrintInvoice();
+    }
+}
+```
+
+### Resumen Final
+
+Este código completo integra:
+
+- **Responsabilidad única**: Cada clase tiene una única responsabilidad, mejorando la mantenibilidad.
+- **Patrón Strategy** para aplicar diferentes descuentos de forma flexible.
+- **Patrón State** para gestionar los distintos estados del pedido (`New`, `Processed`, `Cancelled`).
+- **Patrón Adapter** para generar la factura en varios formatos (`Console`, `HTML`, `JSON`).
